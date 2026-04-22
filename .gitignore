@@ -1,0 +1,25 @@
+# Backend
+backend/.env
+backend/target/
+*.class
+*.jar
+*.war
+
+# ML Service
+ml-service/__pycache__/
+ml-service/venv/
+ml-service/*.pyc
+.env
+
+# Frontend
+frontend/node_modules/
+frontend/build/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+.DS_Store
+
+# Config
+application-prod.properties

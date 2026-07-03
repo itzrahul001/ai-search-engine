@@ -36,9 +36,6 @@ public class SearchService {
     @Value("${serpapi.key}")
     private String serpApiKey;
 
-    @Value("${ml.service.url}")
-    private String mlServiceUrl;
-
     public SearchResponse personalizedSearch(String query, String mode, String email) {
         // 1. Fetch from SerpAPI
         List<SearchResult> results = fetchFromSerpAPI(query);

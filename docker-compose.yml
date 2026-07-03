@@ -17,6 +17,25 @@ services:
       timeout: 5s
       retries: 5
 
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ai-search-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    # Pull the nomic-embed-text model on first start
+    entrypoint: >
+      sh -c "ollama serve &
+             sleep 5 &&
+             ollama pull nomic-embed-text &&
+             wait"
+    healthcheck:
+      test: [ "CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
   backend:
     build: ./backend
     container_name: ai-search-backend
@@ -29,16 +48,12 @@ services:
       SPRING_DATASOURCE_USERNAME: ${DB_USERNAME}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
       JWT_SECRET: ${JWT_SECRET}
-      ML_SERVICE_URL: http://ml-service:5000
+      OLLAMA_BASE_URL: http://ollama:11434
     depends_on:
       mysql:
         condition: service_healthy
-
-  ml-service:
-    build: ./ml-service
-    container_name: ai-search-ml
-    ports:
-      - "5000:5000"
+      ollama:
+        condition: service_healthy
 
   frontend:
     build: ./frontend
@@ -52,5 +67,4 @@ services:
 
 volumes:
   mysql_data:
-
-
+  ollama_data:

@@ -30,99 +30,96 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class AuthController {
 
-    private final UserRepository userRepository;
-    private final UserProfileRepository userProfileRepository;
-    private final PasswordEncoder passwordEncoder;
-    private final JwtUtil jwtUtil;
-    private final AuthenticationManager authenticationManager;
+        private final UserRepository userRepository;
+        private final UserProfileRepository userProfileRepository;
+        private final PasswordEncoder passwordEncoder;
+        private final JwtUtil jwtUtil;
+        private final AuthenticationManager authenticationManager;
 
-    @PostMapping("/register")
-    public ResponseEntity<?> register(@Valid @RequestBody RegisterRequest request) {
-        if (userRepository.existsByEmail(request.getEmail())) {
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body(Map.of("message", "Email already registered"));
+        @PostMapping("/register")
+        public ResponseEntity<?> register(@Valid @RequestBody RegisterRequest request) {
+                if (userRepository.existsByEmail(request.getEmail())) {
+                        return ResponseEntity.status(HttpStatus.CONFLICT)
+                                        .body(Map.of("message", "Email already registered"));
+                }
+
+                User user = User.builder()
+                                .email(request.getEmail())
+                                .passwordHash(passwordEncoder.encode(request.getPassword()))
+                                .fullName(request.getFullName())
+                                .build();
+                user = userRepository.save(user);
+
+                // Auto-create empty profile
+                UserProfile profile = UserProfile.builder()
+                                .user(user)
+                                .interests("[]")
+                                .activeMode("student")
+                                .build();
+                userProfileRepository.save(profile);
+
+                String token = jwtUtil.generateToken(user.getEmail());
+
+                return ResponseEntity.status(HttpStatus.CREATED).body(
+                                AuthResponse.builder()
+                                                .token(token)
+                                                .userId(user.getId())
+                                                .email(user.getEmail())
+                                                .fullName(user.getFullName())
+                                                .message("Registration successful")
+                                                .build());
         }
 
-        User user = User.builder()
-                .email(request.getEmail())
-                .passwordHash(passwordEncoder.encode(request.getPassword()))
-                .fullName(request.getFullName())
-                .build();
-        user = userRepository.save(user);
+        @PostMapping("/login")
+        public ResponseEntity<?> login(@Valid @RequestBody LoginRequest request) {
+                try {
+                        authenticationManager.authenticate(
+                                        new UsernamePasswordAuthenticationToken(
+                                                        request.getEmail(), request.getPassword()));
+                } catch (BadCredentialsException e) {
+                        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                                        .body(Map.of("message", "Invalid email or password"));
+                } catch (DisabledException | LockedException e) {
+                        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                                        .body(Map.of("message", "Account is disabled or locked"));
+                }
 
-        // Auto-create empty profile
-        UserProfile profile = UserProfile.builder()
-                .user(user)
-                .interests("[]")
-                .activeMode("student")
-                .build();
-        userProfileRepository.save(profile);
+                User user = userRepository.findByEmail(request.getEmail())
+                                .orElseThrow(() -> new RuntimeException("User not found"));
 
-        String token = jwtUtil.generateToken(user.getEmail());
+                String token = jwtUtil.generateToken(user.getEmail());
 
-        return ResponseEntity.status(HttpStatus.CREATED).body(
-                AuthResponse.builder()
-                        .token(token)
-                        .userId(user.getId())
-                        .email(user.getEmail())
-                        .fullName(user.getFullName())
-                        .message("Registration successful")
-                        .build()
-        );
-    }
-
-    @PostMapping("/login")
-    public ResponseEntity<?> login(@Valid @RequestBody LoginRequest request) {
-        try {
-            authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(
-                            request.getEmail(), request.getPassword()));
-        } catch (BadCredentialsException e) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("message", "Invalid email or password"));
-        } catch (DisabledException | LockedException e) {
-            return ResponseEntity.status(HttpStatus.FORBIDDEN)
-                    .body(Map.of("message", "Account is disabled or locked"));
+                return ResponseEntity.ok(
+                                AuthResponse.builder()
+                                                .token(token)
+                                                .userId(user.getId())
+                                                .email(user.getEmail())
+                                                .fullName(user.getFullName())
+                                                .message("Login successful")
+                                                .build());
         }
 
-        User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new RuntimeException("User not found"));
+        @GetMapping("/me")
+        public ResponseEntity<?> getCurrentUser(@RequestHeader("Authorization") String authHeader) {
+                if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+                        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                                        .body(Map.of("message", "Missing or invalid token"));
+                }
 
-        String token = jwtUtil.generateToken(user.getEmail());
+                String token = authHeader.substring(7);
+                JwtUtil.TokenValidationResult result = jwtUtil.validateWithDetails(token);
 
-        return ResponseEntity.ok(
-                AuthResponse.builder()
-                        .token(token)
-                        .userId(user.getId())
-                        .email(user.getEmail())
-                        .fullName(user.getFullName())
-                        .message("Login successful")
-                        .build()
-        );
-    }
+                if (!result.valid()) {
+                        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                                        .body(Map.of("message", result.reason()));
+                }
 
-    @GetMapping("/me")
-    public ResponseEntity<?> getCurrentUser(@RequestHeader("Authorization") String authHeader) {
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("message", "Missing or invalid token"));
+                User user = userRepository.findByEmail(result.email())
+                                .orElseThrow(() -> new RuntimeException("User not found"));
+
+                return ResponseEntity.ok(Map.of(
+                                "userId", user.getId(),
+                                "email", user.getEmail(),
+                                "fullName", user.getFullName() != null ? user.getFullName() : ""));
         }
-
-        String token = authHeader.substring(7);
-        JwtUtil.TokenValidationResult result = jwtUtil.validateWithDetails(token);
-
-        if (!result.valid()) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("message", result.reason()));
-        }
-
-        User user = userRepository.findByEmail(result.email())
-                .orElseThrow(() -> new RuntimeException("User not found"));
-
-        return ResponseEntity.ok(Map.of(
-                "userId", user.getId(),
-                "email", user.getEmail(),
-                "fullName", user.getFullName() != null ? user.getFullName() : ""
-        ));
-    }
 }
